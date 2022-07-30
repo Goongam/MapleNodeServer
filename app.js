@@ -9,6 +9,11 @@ app.use(cors({ //모든 요청에 대해 특정 미들웨어를 적용하고 싶
 app.use(express.json());
 //서버 켜기: nodemon app.js
 
+
+
+
+
+//API
 const soapRequest = require("easy-soap-request");
 const convert = require('xml-js');
 const fs = require('fs');
@@ -71,8 +76,6 @@ async function getIdbyNick(nick){
     }
 }
 
-
-
 app.post('/data', async function(req, res){
     //res.header("Access-Control-Allow-Origin", "*");
 
@@ -100,6 +103,106 @@ app.post('/data', async function(req, res){
 
 });
 
+
+
+
+//Crawler
+const axios = require('axios');
+const cheerio = require('cheerio');
+
+const client = axios.create({
+    // ❶ 실제 크롬 웹 브라우저에서 보내는 값과 동일하게 넣기
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.5060.134 Safari/537.36 Edg/103.0.1264.77',
+    },
+});
+
+async function getBasicInfoHTML(nick){
+    const url = encodeURI(`https://maplestory.nexon.com/Ranking/World/Total?c=${nick}&w=0`);
+    const cafe_resp = await client.get(url);
+    const $ = cheerio.load(cafe_resp.data);
+    const CharacterInfo = $(".search_com_chk");
+    if($(CharacterInfo).text() === "") return "NULL"
+    
+    return CharacterInfo;
+    
+}
+
+async function getSearchURL(nick){
+    const url = encodeURI(`https://maplestory.nexon.com/Ranking/World/Total?c=${nick}&w=0`);
+    const cafe_resp = await client.get(url);
+    const $ = cheerio.load(cafe_resp.data);
+    const CharacterInfo = $(".search_com_chk");
+
+    if($(CharacterInfo).text() === "") return "NULL"
+    
+    return "https://maplestory.nexon.com"+CharacterInfo.find("td.left > dl > dt > a").attr("href");
+    
+}
+
+async function getinfoURL(ChracterURL){
+    const resp = await client.get(ChracterURL);
+    const $ = cheerio.load(resp.data);
+    const data = $("#container > div.con_wrap > div.lnb_wrap > ul > li:nth-child(1) > a");
+    return "https://maplestory.nexon.com"+data.attr("href") 
+}
+
+async function getRankingInfo(infoURL){
+    const respInfo = await client.get(infoURL);
+    const $ = cheerio.load(respInfo.data);
+    const TotalRankRowArray = $("#container > div.con_wrap > div.contents_wrap > div > table > tbody > tr");
+    
+    let totalranks = TotalRankRowArray.map((index,el)=>$(el).find(":nth-child(2)").text()).toArray();
+    return totalranks;
+
+}
+
+async function getRankArray(nick){
+    
+    const searchURL = await getSearchURL(nick);
+    if(searchURL === "NULL") return "NULL";
+
+    const infoURL = await getinfoURL(searchURL);
+    const infoData = await getRankingInfo( infoURL );
+    return(infoData);
+
+}
+
+async function getBasicInfo(nick){
+
+    const InfoHTML = await getBasicInfoHTML(nick);
+    if(InfoHTML === "NULL") return "NULL";
+
+    BasicInfo = {
+        "Job":InfoHTML.find("td.left > dl > dd").text(),
+        "Lv":InfoHTML.find("td:nth-child(3)").text(),
+        "Exp":InfoHTML.find("td:nth-child(4)").text(),
+        "Popularity":InfoHTML.find("td:nth-child(5)").text(),
+        "Guild":InfoHTML.find("td:nth-child(6)").text(),
+        "Img":InfoHTML.find("td.left > .char_img > img").attr("src"),
+    }
+
+
+    return BasicInfo;
+
+}
+
+app.get('/MapleCrawling/:nick', async function(req, res){
+    const RankData = await getRankArray(req.params.nick);
+    const BasicInfoData = await getBasicInfo(req.params.nick);
+
+    if(RankData === "NULL" || BasicInfoData === "NULL") {
+        res.send({"error" : "찾을 수 없는 닉네임"});
+        return;
+    }
+
+    res.send(
+        { 
+        "info": BasicInfoData,
+        "Rank" : RankData,
+        });
+});
 
 app.listen(3001, function(){
     console.log("start!!");
