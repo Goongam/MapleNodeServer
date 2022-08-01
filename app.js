@@ -117,7 +117,7 @@ const client = axios.create({
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.5060.134 Safari/537.36 Edg/103.0.1264.77',
     },
 });
-
+//검색 기본정보
 async function getBasicInfoHTML(nick){
     const url = encodeURI(`https://maplestory.nexon.com/Ranking/World/Total?c=${nick}&w=0`);
     const cafe_resp = await client.get(url);
@@ -128,7 +128,7 @@ async function getBasicInfoHTML(nick){
     return CharacterInfo;
     
 }
-
+//검색 캐릭터 정보 URL
 async function getSearchURL(nick){
     const url = encodeURI(`https://maplestory.nexon.com/Ranking/World/Total?c=${nick}&w=0`);
     const cafe_resp = await client.get(url);
@@ -141,6 +141,7 @@ async function getSearchURL(nick){
     
 }
 
+//랭킹정보 URL
 async function getinfoURL(ChracterURL){
     const resp = await client.get(ChracterURL);
     const $ = cheerio.load(resp.data);
@@ -148,15 +149,48 @@ async function getinfoURL(ChracterURL){
     return "https://maplestory.nexon.com"+data.attr("href") 
 }
 
+//랭킹정보
 async function getRankingInfo(infoURL){
     const respInfo = await client.get(infoURL);
     const $ = cheerio.load(respInfo.data);
-    const TotalRankRowArray = $("#container > div.con_wrap > div.contents_wrap > div > table > tbody > tr");
+    const RankRowTable = $("#container > div.con_wrap > div.contents_wrap > div > table > tbody > tr");
     
-    let totalranks = TotalRankRowArray.map((index,el)=>$(el).find(":nth-child(2)").text()).toArray();
-    return totalranks;
+    //1집계날짜	    2종합랭킹	3월드랭킹	4직업랭킹	5인기도랭킹	    6레벨	7경험치
+    return ranks = {
+        "Dates" : RankRowTable.map((index,el)=>$(el).find(":nth-child(1)").text()).toArray(),
+        "TotalRanks" : RankRowTable.map((index,el)=>$(el).find(":nth-child(2)").text()).toArray(),
+        "Levs" : RankRowTable.map((index,el)=>$(el).find(":nth-child(6)").text()).toArray(),
+        "Exps" : RankRowTable.map((index,el)=>$(el).find(":nth-child(7)").text()).toArray(),
+    }
+
 
 }
+
+async function getSearchUnionInfo(nick){
+    const URL = encodeURI(`https://maplestory.nexon.com/Ranking/Union?c=${nick}`);
+    const respUnion = await client.get(URL);
+    const $ = cheerio.load(respUnion.data);
+    const unionData = $('tr.search_com_chk');
+    const isNoneData = $('.none_list2').text();
+
+    if(isNoneData === "랭킹정보가 없습니다.") return "NoRankInfo";
+
+    let unionRank = unionData.find(".ranking_other").text() === "" ? 
+        unionData.find(".ranking_num > img").attr("alt").charAt(0) :
+        unionData.find(".ranking_other").text().replace(/\n|\r|\s*/g, "");;
+
+    return {
+        "unionRank" : unionRank,
+        "unionLev" : unionData.find("td:nth-child(3)").text(),
+
+    };
+
+}
+
+
+
+
+
 
 async function getRankArray(nick){
     
@@ -188,20 +222,49 @@ async function getBasicInfo(nick){
 
 }
 
-app.get('/MapleCrawling/:nick', async function(req, res){
-    const RankData = await getRankArray(req.params.nick);
+async function getUnionRank(nick){
+   const UnionData = await getSearchUnionInfo(nick);
+   return UnionData;
+}
+
+
+
+app.get('/MapleCrawling/info/:nick', async function(req, res){
+    //const RankData = await getRankArray(req.params.nick);
     const BasicInfoData = await getBasicInfo(req.params.nick);
 
-    if(RankData === "NULL" || BasicInfoData === "NULL") {
+    if(BasicInfoData === "NULL") {
         res.send({"error" : "찾을 수 없는 닉네임"});
         return;
     }
 
     res.send(
         { 
-        "info": BasicInfoData,
-        "Rank" : RankData,
+        "info": BasicInfoData
         });
+});
+
+app.get('/MapleCrawling/rank/:nick', async function(req, res){
+    const RankData = await getRankArray(req.params.nick);
+    // const BasicInfoData = await getBasicInfo(req.params.nick);
+
+    if(RankData === "NULL") {
+        res.send({"error" : "찾을 수 없는 닉네임"});
+        return;
+    }
+
+    res.send(
+        { 
+        "Rank" : RankData
+        });
+});
+
+app.get('/MapleCrawling/union/:nick',async function(req,res){
+    unionData = await getUnionRank(req.params.nick);
+    console.log(unionData);
+    res.send({
+        "Union" : unionData,
+    });
 });
 
 app.listen(3001, function(){
